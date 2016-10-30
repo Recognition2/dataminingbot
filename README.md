@@ -1,0 +1,2 @@
+# dataminingbot
+Statistics analyzation bot. 

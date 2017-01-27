@@ -1,0 +1,10 @@
+
+# Bot settings
+usePolling = true
+apikey = "321297097:AAHe0BpcXKqoZYyUjgjdtCneRIaPEvgFzRg"
+admins =    [
+    "38973352",
+    "11813497"
+]
+
+logLevel = "info"

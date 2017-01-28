@@ -41,13 +41,20 @@ type Chat struct {
 	Username string //OPTIONAL: Not for groups.
 }
 
-type ReceivedUpdates struct {
-	Update []Update
+type APIError struct {
+	Ok          bool   `json:"ok"` // Is response successful?
+	Error_code  int    `json:"error_code"`
+	Description string `json:"description"`
 }
 
 type BasicReturn struct {
-	Ok     bool
-	Result interface{}
+	Ok     bool        `json:"ok"`
+	Result interface{} `json:"result"`
+}
+
+type sendMessage struct {
+	Chat_id int64  `json:"chat_id"`
+	Text    string `json:"text"`
 }
 
 var turl = "https://api.telegram.org/bot"
@@ -134,7 +141,7 @@ func (t Tbot) getUpdates(offset int64, shutdown chan bool) ([]Update, error) {
 		return nil, err
 	}
 	if isSucces.Ok != true {
-		logErr.Printf("ERROR from Telegram API: %+v", isSucces.Result)
+		logErr.Printf("ERROR from Telegram API: %+v\n", isSucces.Result)
 		return nil, errors.New("Telegram bot token is incorrect")
 	}
 

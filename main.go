@@ -4,15 +4,14 @@
 package main
 
 import (
-	"fmt"
+	"bytes"
+	"encoding/json"
 	"github.com/BurntSushi/toml"
 	"io/ioutil"
 	"log"
 	"net/http"
-	"net/url"
 	"os"
 	"os/signal"
-	"strconv"
 	"sync"
 	"syscall"
 	"time"
@@ -98,9 +97,8 @@ func mainExitCode() int {
 	// Program will hang here, probably forever
 	<-done
 	// Shutdown initiated, waiting for all goroutines to shut down
-	logInfo.Println("Waiting for goroutines operations to stop...")
 	wg.Wait()
-	logInfo.Println("Everything has shut down, stopping now")
+	logInfo.Println("Shutdown successfull")
 	return 0
 }
 
@@ -119,24 +117,55 @@ outer:
 		if err != nil {
 			logWarn.Print(err)
 		}
-		logInfo.Printf("Updates received: %+v", updates)
+		logInfo.Printf("Updates received: %+v\n", updates)
 		for _, k := range updates {
 			if k.Update_id > offset {
 				offset = k.Update_id
-				fmt.Printf("Offset has now become: %d. kUpdId = %d", offset, k.Update_id)
-				go handleMessage(k.Message, bot)
+			}
+
+			if k.Update_id != 0 {
+				wg.Add(1)
+				go handleMessage(k.Message, bot, wg)
 			}
 		}
-		time.Sleep(time.Second * 5)
+		time.Sleep(time.Second * 5) // REMOVE THIS
 	}
 	logInfo.Println("Stopping message monitor")
 }
 
-func handleMessage(m Message, bot Tbot) {
+func handleMessage(m Message, bot Tbot, wg *sync.WaitGroup) {
+	defer wg.Done()
 	logInfo.Println("Handling message")
-	raw := url.Values{}
-	raw.Set("chat_id", strconv.FormatInt(m.Chat.Id, 10))
-	raw.Add("text", "Hoi. You sent: "+m.Text)
 
-	http.Post(turl+bot.apikey+"/sendMessage", raw.Encode(), nil)
+	s := sendMessage{
+		Chat_id: m.Chat.Id,
+		Text:    "Hoi. You sent: " + m.Text,
+	}
+	b := new(bytes.Buffer)
+	json.NewEncoder(b).Encode(s)
+	r, err := http.Post(turl+bot.apikey+"/sendMessage", "application/json; charset=utf-8", b)
+	if err != nil {
+		logErr.Println(err)
+		return
+	}
+
+	defer r.Body.Close()
+	rdata, err := ioutil.ReadAll(r.Body)
+	if err != nil {
+		logErr.Println(err)
+	}
+
+	var apierr APIError
+	err = json.Unmarshal(rdata, &apierr)
+	if err != nil {
+		logWarn.Printf("Error decoding sent response: %v", err)
+	}
+
+	if apierr.Ok == false {
+		logWarn.Printf("Error from Telegram API. Error code: %d. Description: %s", apierr.Error_code, apierr.Description)
+		return
+	}
+
+	logInfo.Println(b.String())
+
 }

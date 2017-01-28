@@ -66,6 +66,7 @@ func mainExitCode() int {
 	bot.Username, err = bot.getUsername()
 	if err != nil {
 		logErr.Print(err)
+		return 2
 	}
 
 	shouldShutdown := make(chan bool)
@@ -75,7 +76,7 @@ func mainExitCode() int {
 
 	// Start all async operations
 	wg.Add(1)
-	go messageMonitor(wg, bot, shouldShutdown)
+	go messageMonitor(&wg, bot, shouldShutdown)
 
 	// Wait for SIGINT or SIGTERM, then quit
 	done := make(chan bool, 1)
@@ -85,6 +86,7 @@ func mainExitCode() int {
 	go func() {
 		defer wg.Done()
 		<-sigs // This goroutine will hang here until interrupt is sent
+		println()
 		logInfo.Println("Shutdown signal received, waiting for goroutines")
 		close(shouldShutdown)
 		// Await all other goroutines, then send Done
@@ -96,13 +98,14 @@ func mainExitCode() int {
 	// Program will hang here, probably forever
 	<-done
 	// Shutdown initiated, waiting for all goroutines to shut down
-	logInfo.Println("Waiting for async operations to stop...")
+	logInfo.Println("Waiting for goroutines operations to stop...")
 	wg.Wait()
 	logInfo.Println("Everything has shut down, stopping now")
 	return 0
 }
 
-func messageMonitor(wg sync.WaitGroup, bot Tbot, shutdown chan bool) {
+func messageMonitor(wg *sync.WaitGroup, bot Tbot, shutdown chan bool) {
+	defer wg.Done()
 	var offset int64 = 0
 
 outer:
@@ -116,17 +119,17 @@ outer:
 		if err != nil {
 			logWarn.Print(err)
 		}
+		logInfo.Printf("Updates received: %+v", updates)
 		for _, k := range updates {
-			fmt.Printf("%#v\n", k)
 			if k.Update_id > offset {
 				offset = k.Update_id
+				fmt.Printf("Offset has now become: %d. kUpdId = %d", offset, k.Update_id)
 				go handleMessage(k.Message, bot)
 			}
 		}
-		time.Sleep(time.Second * 10)
+		time.Sleep(time.Second * 5)
 	}
 	logInfo.Println("Stopping message monitor")
-	wg.Done()
 }
 
 func handleMessage(m Message, bot Tbot) {

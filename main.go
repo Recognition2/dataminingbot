@@ -4,12 +4,9 @@
 package main
 
 import (
-	"bytes"
-	"encoding/json"
 	"github.com/BurntSushi/toml"
 	"io/ioutil"
 	"log"
-	"net/http"
 	"os"
 	"os/signal"
 	"sync"
@@ -137,35 +134,8 @@ func handleMessage(m Message, bot Tbot, wg *sync.WaitGroup) {
 	defer wg.Done()
 	logInfo.Println("Handling message")
 
-	s := sendMessage{
-		Chat_id: m.Chat.Id,
-		Text:    "Hoi. You sent: " + m.Text,
-	}
-	b := new(bytes.Buffer)
-	json.NewEncoder(b).Encode(s)
-	r, err := http.Post(turl+bot.apikey+"/sendMessage", "application/json; charset=utf-8", b)
-	if err != nil {
-		logErr.Println(err)
-		return
-	}
-
-	defer r.Body.Close()
-	rdata, err := ioutil.ReadAll(r.Body)
+	err := bot.sendMessage(m.Chat.Id, "Hoi. You sent: "+m.Text)
 	if err != nil {
 		logErr.Println(err)
 	}
-
-	var apierr APIError
-	err = json.Unmarshal(rdata, &apierr)
-	if err != nil {
-		logWarn.Printf("Error decoding sent response: %v", err)
-	}
-
-	if apierr.Ok == false {
-		logWarn.Printf("Error from Telegram API. Error code: %d. Description: %s", apierr.Error_code, apierr.Description)
-		return
-	}
-
-	logInfo.Println(b.String())
-
 }

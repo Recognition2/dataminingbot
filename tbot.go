@@ -1,12 +1,12 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io/ioutil"
 	"net/http"
-	"strconv"
 )
 
 type Tbot struct {
@@ -22,23 +22,35 @@ type User struct {
 }
 
 type Update struct {
-	Update_id int64   `json:"update_id"`         // Unique identifier
-	Message   Message `json:"message,omitempty"` // OPTIONAL:	Message that was sent
+	Update_id           int64   `json:"update_id"`           // Unique identifier
+	Message             Message `json:"message,omitempty"`   // OPTIONAL:	Message that was sent
+	Edited_message      Message `json:"edited_message"`      // OPTIONAL: New version of a message
+	Channel_post        Message `json:"channel_post"`        // OPTIONAL
+	Edited_channel_post Message `json:"edited_channel_post"` // OPTIONAL
 }
 
 type Message struct {
-	Message_id int64  // Unique identifier
-	From       User   // OPTIONAL: May be empty for channels
-	Date       int    // Date message was sent, Unix time
-	Chat       Chat   // Conversation message belongs to
-	Text       string // Raw UTF-8 text of message
+	Message_id int64  `json:"message_id"` // Unique identifier
+	From       User   `json:"from"`       // OPTIONAL: May be empty for channels
+	Date       int    `json:"date"`       // Date message was sent, Unix time
+	Chat       Chat   `json:"chat"`       // Conversation message belongs to
+	Text       string `json:"text"`       // Raw UTF-8 text of message
+}
+
+type MessageEntity struct {
+	Type string `json:"type"` // One of "mention", "hashtag", "bot_command", "text_link" (clickable text urls),
+	// "text_mention" (users without usernames), "url", "email", "bold", "italic", "code", "pre".
+	Offset int    `json:"offset"` // Offset in UTF-16 code units
+	Length int    `json:"length"` // Length of entity in UTF-16 code units
+	Url    string `json:"url"`    // OPTIONAL: for text_link only
+	User   User   `json:"user"`   // OPTIONAL: For text_mention only
 }
 
 type Chat struct {
-	Id       int64  // Unique identifier, max 52 bits.
-	Type     string // One of: "private", "group", “supergroup” or “channel”
-	Title    string // OPTIONAL
-	Username string //OPTIONAL: Not for groups.
+	Id       int64  `json:"id"`       // Unique identifier, max 52 bits.
+	Type     string `json:"type"`     // One of: "private", "group", “supergroup” or “channel”
+	Title    string `json:"title"`    // OPTIONAL
+	Username string `json:"username"` // OPTIONAL: Not for groups.
 }
 
 type APIError struct {
@@ -50,11 +62,6 @@ type APIError struct {
 type BasicReturn struct {
 	Ok     bool        `json:"ok"`
 	Result interface{} `json:"result"`
-}
-
-type sendMessage struct {
-	Chat_id int64  `json:"chat_id"`
-	Text    string `json:"text"`
 }
 
 var turl = "https://api.telegram.org/bot"
@@ -99,9 +106,23 @@ func (t Tbot) getUsername() (string, error) {
 
 func (t Tbot) getUpdates(offset int64, shutdown chan bool) ([]Update, error) {
 	logInfo.Println("Getting an Update")
-	timeout := 120
-	var arg = "offset=" + strconv.FormatInt(offset, 10) + "&timeout=" + strconv.Itoa(timeout)
-	httpResponse, err := http.Get(turl + t.apikey + "/getUpdates?" + arg)
+
+	var arg struct {
+		Timeout         int      `json:"timeout"`
+		Offset          int64    `json:"offset"`
+		Limit           int      `json:"limit"`
+		Allowed_updates []string `json:"allowed_updates"`
+	}
+	arg.Timeout = 120
+	arg.Offset = offset
+	arg.Limit = 1
+
+	b := new(bytes.Buffer)
+	json.NewEncoder(b).Encode(arg)
+
+	client := &http.Client{}
+
+	r, err := http.Post(turl+t.apikey+"/getUpdates", "application/json; charset=utf-8", b)
 	// http.Get has an inherent delay, while doing DNS lookup etc. (guaranteeing that your connection is valid)
 	if err != nil {
 		return nil, err
@@ -111,8 +132,8 @@ func (t Tbot) getUpdates(offset int64, shutdown chan bool) ([]Update, error) {
 	rawDataCompleted := make(chan bool)
 
 	go func() {
-		defer httpResponse.Body.Close()
-		rawdata, err := ioutil.ReadAll(httpResponse.Body) // Read stream
+		defer r.Body.Close()
+		rawdata, err := ioutil.ReadAll(r.Body) // Read stream
 		if err != nil {
 			logErr.Printf("Error reading from response: %v\n", err)
 			return
@@ -153,4 +174,41 @@ func (t Tbot) getUpdates(offset int64, shutdown chan bool) ([]Update, error) {
 	}
 
 	return updates, nil
+}
+
+func (t Tbot) sendMessage(chat_id int64, text string) error {
+	var s struct {
+		Chat_id int64  `json:"chat_id"`
+		Text    string `json:"text"`
+	}
+	s.Chat_id = chat_id
+	s.Text = text
+
+	b := new(bytes.Buffer)
+	json.NewEncoder(b).Encode(s)
+
+	r, err := http.Post(turl+t.apikey+"/sendMessage", "application/json; charset=utf-8", b)
+	if err != nil {
+		return err
+	}
+
+	defer r.Body.Close()
+	rdata, err := ioutil.ReadAll(r.Body)
+	if err != nil {
+		return err
+	}
+
+	var apierr APIError
+	err = json.Unmarshal(rdata, &apierr)
+	if err != nil {
+		logWarn.Printf("Error decoding sent response: %v", err)
+	}
+
+	if apierr.Ok == false {
+		logWarn.Printf("Error from Telegram API. Error code: %d. Description: %s", apierr.Error_code, apierr.Description)
+		return errors.New("Error from Telegram API")
+	}
+
+	logInfo.Println(b.String())
+	return nil
 }

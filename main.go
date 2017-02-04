@@ -4,14 +4,16 @@
 package main
 
 import (
+	"bytes"
 	"github.com/BurntSushi/toml"
+	"gopkg.in/telegram-bot-api.v4"
 	"io/ioutil"
 	"log"
 	"os"
+	"os/exec"
 	"os/signal"
 	"sync"
 	"syscall"
-	"time"
 )
 
 type Config struct {
@@ -21,9 +23,16 @@ type Config struct {
 	LogLevel   string // how much to log
 }
 
+type global struct {
+	wg       *sync.WaitGroup  // For checking that everything has indeed shut down
+	shutdown chan bool        // To make sure everything can shut down
+	bot      *tgbotapi.BotAPI // The actual bot
+	c        Config
+}
+
 // Global variables
 // Loggers:
-var logErr = log.New(os.Stderr, "[ERR] ", log.Ldate+log.Ltime+log.Ltime)
+var logErr = log.New(os.Stderr, "[ERRO] ", log.Ldate+log.Ltime+log.Ltime)
 var logWarn = log.New(os.Stdout, "[WARN] ", log.Ldate+log.Ltime)
 var logInfo = log.New(os.Stdout, "[INFO] ", log.Ldate+log.Ltime)
 
@@ -56,23 +65,36 @@ func mainExitCode() int {
 		return 1
 	}
 	logInfo.Println("Config file parsed")
-
 	logWarn.Println("This is an example of a warning")
-	bot := Tbot{apikey: c.Apikey}
-	bot.Username, err = bot.getUsername()
+	logErr.Println("This is an example of an error")
+
+	bot, err := tgbotapi.NewBotAPI(c.Apikey)
 	if err != nil {
-		logErr.Print(err)
-		return 2
+		logErr.Println(err)
 	}
 
 	shouldShutdown := make(chan bool)
 
 	// Start the waitgroup
 	var wg sync.WaitGroup
+	g := global{
+		wg:       &wg,
+		shutdown: shouldShutdown,
+		bot:      bot,
+		c:        c,
+	}
 
-	// Start all async operations
+	// Start n messageSender threads, to prevent telegram spamming
+	n := 2
+	toSend := make(chan tgbotapi.Chattable, 3*n)
+	wg.Add(n)
+	for i := 0; i < n; i++ {
+		go messageSender(g, i, toSend)
+	}
+
+	// Start message monitor
 	wg.Add(1)
-	go messageMonitor(&wg, bot, shouldShutdown)
+	go messageMonitor(g, toSend) // Monitor messages
 
 	// Wait for SIGINT or SIGTERM, then quit
 	done := make(chan bool, 1)
@@ -95,47 +117,92 @@ func mainExitCode() int {
 	<-done
 	// Shutdown initiated, waiting for all goroutines to shut down
 	wg.Wait()
-	logInfo.Println("Shutdown successfull")
+	logInfo.Println("Shutting down")
 	return 0
 }
 
-func messageMonitor(wg *sync.WaitGroup, bot Tbot, shutdown chan bool) {
-	defer wg.Done()
-	var offset int64 = 0
+func messageMonitor(g global, toSend chan tgbotapi.Chattable) {
+	defer g.wg.Done()
+
+	u := tgbotapi.NewUpdate(0)
+	u.Timeout = 15
+	updates, err := g.bot.GetUpdatesChan(u)
+	if err != nil {
+		logErr.Printf("Update failed: %v\n", err)
+	}
 
 outer:
 	for {
 		select {
-		case <-shutdown:
+		case <-g.shutdown:
 			break outer
-		default:
-		}
-		updates, err := bot.getUpdates(offset, shutdown)
-		if err != nil {
-			logWarn.Print(err)
-		}
-		logInfo.Printf("Updates received: %+v\n", updates)
-		for _, k := range updates {
-			if k.Update_id > offset {
-				offset = k.Update_id
+		case update := <-updates:
+			if update.Message == nil {
+				continue
 			}
 
-			if k.Update_id != 0 {
-				wg.Add(1)
-				go handleMessage(k.Message, bot, wg)
+			logInfo.Printf("Message received from %s: '%s'", update.Message.From.UserName, update.Message.Text)
+
+			if update.Message.IsCommand() {
+				g.wg.Add(1)
+				commandHandler(g, update.Message, toSend)
 			}
+
 		}
-		time.Sleep(time.Second * 5) // REMOVE THIS
 	}
-	logInfo.Println("Stopping message monitor")
+
+	logWarn.Println("Stopping message monitor")
 }
 
-func handleMessage(m Message, bot Tbot, wg *sync.WaitGroup) {
-	defer wg.Done()
-	logInfo.Println("Handling message")
-
-	err := bot.sendMessage(m.Chat.Id, "Hoi. You sent: "+m.Text)
-	if err != nil {
-		logErr.Println(err)
+func messageSender(g global, id int, msg chan tgbotapi.Chattable) {
+	defer g.wg.Done()
+outer:
+	for {
+		select {
+		case <-g.shutdown:
+			break outer
+		case m := <-msg:
+			g.bot.Send(m)
+		}
 	}
+	logWarn.Printf("Stopping message sender #%d\n", id)
+}
+
+func commandHandler(g global, cmd *tgbotapi.Message, send chan tgbotapi.Chattable) {
+	defer g.wg.Done()
+
+	switch cmd.Command() {
+	case "hi":
+		send <- tgbotapi.NewMessage(cmd.Chat.ID, "Hello to you too!")
+	default:
+		if contains(string(cmd.From.ID), g.c.Admins) && cmd.Chat.IsPrivate() {
+			adminCommandHandler(g, *cmd, send)
+
+		}
+	}
+}
+
+func adminCommandHandler(g global, cmd tgbotapi.Message, send chan tgbotapi.Chattable) {
+	switch cmd.Command() {
+	case "load":
+		logInfo.Println("The load has been requested")
+		w := exec.Command("w")
+		var out bytes.Buffer
+		w.Stdout = &out
+		err := w.Run()
+		if err != nil {
+			logErr.Println(err)
+		}
+		msg := tgbotapi.NewMessage(cmd.Chat.ID, out.String())
+		send <- msg
+	}
+}
+
+func contains(a string, list []string) bool {
+	for _, b := range list {
+		if b == a {
+			return true
+		}
+	}
+	return false
 }

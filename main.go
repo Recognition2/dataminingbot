@@ -150,22 +150,24 @@ func commandHandler(g global, cmd *tgbotapi.Message, send chan tgbotapi.Chattabl
 	defer g.wg.Done()
 
 	switch cmd.Command() {
-	case "hi": 	handleHi(g.bot)
+	case "hi":
+		handleHi(g.bot)
 	default:
 		if contains(string(cmd.From.ID), g.c.Admins) {
-			adminCommandHandler(g, *cmd, send)
+			adminCommandHandler(g, *cmd)
 		}
 	}
 }
 
-func adminCommandHandler(g global, cmd tgbotapi.Message, send chan tgbotapi.Chattable) {
+func adminCommandHandler(g global, cmd tgbotapi.Message) {
 	// These commands are only available if:
 	// - You're in a private chat
 	// - You're in a group chat, but you specify "override"
-	logInfo.Printf("Admin command %s requested\n", cmd.Command())
+	logInfo.Printf("Admin command '%s' requested\n", cmd.Command())
 
 	switch cmd.Command() {
-	case "load": handleLoad(g.bot)
+	case "load":
+		handleLoad(g.bot)
 	}
 }
 

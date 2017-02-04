@@ -84,14 +84,6 @@ func mainExitCode() int {
 		c:        c,
 	}
 
-	// Start n messageSender threads, to prevent telegram spamming
-	n := 2
-	toSend := make(chan tgbotapi.Chattable, 3*n)
-	wg.Add(n)
-	for i := 0; i < n; i++ {
-		go messageSender(g, i, toSend)
-	}
-
 	// Start message monitor
 	wg.Add(1)
 	go messageMonitor(g, toSend) // Monitor messages
@@ -154,47 +146,26 @@ outer:
 	logWarn.Println("Stopping message monitor")
 }
 
-func messageSender(g global, id int, msg chan tgbotapi.Chattable) {
-	defer g.wg.Done()
-outer:
-	for {
-		select {
-		case <-g.shutdown:
-			break outer
-		case m := <-msg:
-			g.bot.Send(m)
-		}
-	}
-	logWarn.Printf("Stopping message sender #%d\n", id)
-}
-
 func commandHandler(g global, cmd *tgbotapi.Message, send chan tgbotapi.Chattable) {
 	defer g.wg.Done()
 
 	switch cmd.Command() {
-	case "hi":
-		send <- tgbotapi.NewMessage(cmd.Chat.ID, "Hello to you too!")
+	case "hi": 	handleHi(g.bot)
 	default:
-		if contains(string(cmd.From.ID), g.c.Admins) && cmd.Chat.IsPrivate() {
+		if contains(string(cmd.From.ID), g.c.Admins) {
 			adminCommandHandler(g, *cmd, send)
-
 		}
 	}
 }
 
 func adminCommandHandler(g global, cmd tgbotapi.Message, send chan tgbotapi.Chattable) {
+	// These commands are only available if:
+	// - You're in a private chat
+	// - You're in a group chat, but you specify "override"
+	logInfo.Printf("Admin command %s requested\n", cmd.Command())
+
 	switch cmd.Command() {
-	case "load":
-		logInfo.Println("The load has been requested")
-		w := exec.Command("w")
-		var out bytes.Buffer
-		w.Stdout = &out
-		err := w.Run()
-		if err != nil {
-			logErr.Println(err)
-		}
-		msg := tgbotapi.NewMessage(cmd.Chat.ID, out.String())
-		send <- msg
+	case "load": handleLoad(g.bot)
 	}
 }
 

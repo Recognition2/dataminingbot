@@ -26,6 +26,7 @@ type global struct {
 	shutdown chan bool        // To make sure everything can shut down
 	bot      *tgbotapi.BotAPI // The actual bot
 	c        Config
+	messages chan *tgbotapi.Message
 }
 
 // Global variables
@@ -82,6 +83,11 @@ func mainExitCode() int {
 		c:        c,
 	}
 
+	// Start processing messages
+	g.messages = make(chan *tgbotapi.Message, 100)
+	wg.Add(1)
+	go messageProcessor(g)
+
 	// Start message monitor
 	wg.Add(1)
 	go messageMonitor(g) // Monitor messages
@@ -131,13 +137,13 @@ outer:
 				continue
 			}
 
-			logInfo.Printf("Message received from %s: '%s'", update.Message.From.UserName, update.Message.Text)
-
 			if update.Message.IsCommand() {
 				g.wg.Add(1)
 				commandHandler(g, update.Message)
+			} else {
+				// Message is not a command, handle it.
+				g.messages <- update.Message
 			}
-
 		}
 	}
 

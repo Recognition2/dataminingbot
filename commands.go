@@ -13,13 +13,17 @@ func commandHandler(g global, cmd *tgbotapi.Message) {
 	case "hi":
 		handleHi(g.bot, cmd)
 	default:
+		var isMessage bool = true
 		if contains(strconv.Itoa(cmd.From.ID), g.c.Admins) {
-			adminCommandHandler(g, cmd)
+			isMessage = adminCommandHandler(g, cmd)
+		}
+
+		if isMessage {
+			g.messages <- cmd
 		}
 	}
 }
 
 func handleHi(bot *tgbotapi.BotAPI, cmd *tgbotapi.Message) {
-	msg := tgbotapi.NewMessage(cmd.Chat.ID, "Hello to you too!")
-	bot.Send(msg)
+	bot.Send(tgbotapi.NewMessage(cmd.Chat.ID, "Hello to you too!"))
 }

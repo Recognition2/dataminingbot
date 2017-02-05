@@ -8,7 +8,7 @@ import (
 	"os/exec"
 )
 
-func adminCommandHandler(g global, cmd *tgbotapi.Message) {
+func adminCommandHandler(g global, cmd *tgbotapi.Message) bool {
 	// These commands are only available if:
 	// - You're in a private chat
 	// - You're in a group chat, but you specify "override"
@@ -19,7 +19,10 @@ func adminCommandHandler(g global, cmd *tgbotapi.Message) {
 		handleLoad(g.bot, cmd)
 	case "uptime":
 		handleUptime(g.bot, cmd)
+	default:
+		return true // Is clearly not an admin command
 	}
+	return false
 }
 
 func handleLoad(bot *tgbotapi.BotAPI, cmd *tgbotapi.Message) {

@@ -4,13 +4,11 @@
 package main
 
 import (
-	"bytes"
 	"github.com/BurntSushi/toml"
 	"gopkg.in/telegram-bot-api.v4"
 	"io/ioutil"
 	"log"
 	"os"
-	"os/exec"
 	"os/signal"
 	"sync"
 	"syscall"
@@ -86,7 +84,7 @@ func mainExitCode() int {
 
 	// Start message monitor
 	wg.Add(1)
-	go messageMonitor(g, toSend) // Monitor messages
+	go messageMonitor(g) // Monitor messages
 
 	// Wait for SIGINT or SIGTERM, then quit
 	done := make(chan bool, 1)
@@ -113,7 +111,7 @@ func mainExitCode() int {
 	return 0
 }
 
-func messageMonitor(g global, toSend chan tgbotapi.Chattable) {
+func messageMonitor(g global) {
 	defer g.wg.Done()
 
 	u := tgbotapi.NewUpdate(0)
@@ -137,38 +135,13 @@ outer:
 
 			if update.Message.IsCommand() {
 				g.wg.Add(1)
-				commandHandler(g, update.Message, toSend)
+				commandHandler(g, update.Message)
 			}
 
 		}
 	}
 
 	logWarn.Println("Stopping message monitor")
-}
-
-func commandHandler(g global, cmd *tgbotapi.Message, send chan tgbotapi.Chattable) {
-	defer g.wg.Done()
-
-	switch cmd.Command() {
-	case "hi":
-		handleHi(g.bot)
-	default:
-		if contains(string(cmd.From.ID), g.c.Admins) {
-			adminCommandHandler(g, *cmd)
-		}
-	}
-}
-
-func adminCommandHandler(g global, cmd tgbotapi.Message) {
-	// These commands are only available if:
-	// - You're in a private chat
-	// - You're in a group chat, but you specify "override"
-	logInfo.Printf("Admin command '%s' requested\n", cmd.Command())
-
-	switch cmd.Command() {
-	case "load":
-		handleLoad(g.bot)
-	}
 }
 
 func contains(a string, list []string) bool {

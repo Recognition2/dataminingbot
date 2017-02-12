@@ -1,11 +1,15 @@
 package main
 
-import "github.com/go-telegram-bot-api/telegram-bot-api"
+import (
+	"fmt"
+	"github.com/go-telegram-bot-api/telegram-bot-api"
+)
 
 type chatStats struct {
 	name         string
 	messageTotal int
 	charTotal    int64
+	Type         string
 	people       map[int]person
 }
 
@@ -27,9 +31,6 @@ outer:
 			break outer
 		case msg := <-g.messages:
 			processMessage(msg, stats)
-			m := tgbotapi.NewMessage(msg.Chat.ID, "This is just a message")
-			m.ReplyToMessageID = msg.MessageID
-			g.bot.Send(m)
 		}
 	}
 
@@ -42,6 +43,7 @@ func processMessage(msg *tgbotapi.Message, stats map[int64]chatStats) {
 	if ok == false {
 		i.name = msg.Chat.Title
 		i.people = make(map[int]person)
+		i.Type = msg.Chat.Type
 	}
 
 	i.messageTotal++
@@ -50,7 +52,7 @@ func processMessage(msg *tgbotapi.Message, stats map[int64]chatStats) {
 	// Cherry pick again
 	p, ok := i.people[msg.From.ID]
 	if ok == false {
-		p.name = msg.From.String()
+		p.name = fmt.Sprintf("%s %s", msg.From.FirstName, msg.From.LastName)
 	}
 	p.msgcount++
 	p.charcount += int64(len(msg.Text))

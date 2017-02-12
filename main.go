@@ -5,7 +5,7 @@ package main
 
 import (
 	"github.com/BurntSushi/toml"
-	"gopkg.in/telegram-bot-api.v4"
+	"github.com/go-telegram-bot-api/telegram-bot-api"
 	"io/ioutil"
 	"log"
 	"os"
@@ -15,10 +15,13 @@ import (
 )
 
 type Config struct {
-	Apikey     string // Telegram API key
-	Admins     []string
-	UsePolling bool
-	LogLevel   string // how much to log
+	Apikey       string // Telegram API key
+	Admins       []string
+	UsePolling   bool
+	LogLevel     string // how much to log
+	Mysql_user   string `json:"mysql_user"`
+	Mysql_passwd string `json:"mysql_passwd"`
+	Mysql_dbname string `json:"mysql_dbname"`
 }
 
 type global struct {
@@ -74,7 +77,7 @@ func mainExitCode() int {
 
 	shouldShutdown := make(chan bool)
 
-	// Start the waitgroup
+	// Create the waitgroup
 	var wg sync.WaitGroup
 	g := global{
 		wg:       &wg,
@@ -92,6 +95,8 @@ func mainExitCode() int {
 	wg.Add(1)
 	go messageMonitor(g) // Monitor messages
 
+	// Start the database connection
+
 	// Wait for SIGINT or SIGTERM, then quit
 	done := make(chan bool, 1)
 	sigs := make(chan os.Signal, 2)
@@ -103,7 +108,6 @@ func mainExitCode() int {
 		println()
 		logInfo.Println("Shutdown signal received, waiting for goroutines")
 		close(shouldShutdown)
-		// Await all other goroutines, then send Done
 		done <- true
 	}()
 
@@ -139,9 +143,9 @@ outer:
 
 			if update.Message.IsCommand() {
 				g.wg.Add(1)
-				commandHandler(g, update.Message)
+				go commandHandler(g, update.Message)
 			} else {
-				// Message is not a command, handle it.
+				// Message is no command, handle it
 				g.messages <- update.Message
 			}
 		}
@@ -149,6 +153,28 @@ outer:
 
 	logWarn.Println("Stopping message monitor")
 }
+
+//func dbHandler(g global) {
+//	defer g.wg.Done()
+//	user := g.c.Mysql_user
+//	passwd := g.c.Mysql_passwd
+//	dbname := g.c.Mysql_dbname
+//
+//	db, err := sql.Open("mysql", user + ":" + passwd + "@/" + dbname)	// DOES NOT open a connection
+//	if err != nil {
+//		logErr.Printf("Failed opening db connection: %v\n", err)
+//		return
+//	}
+//	defer db.Close()
+//
+//	err = db.Ping() // Validating DSN data
+//	if err != nil {
+//		logErr.Println(err)
+//	}
+//
+//
+//
+//}
 
 func contains(a string, list []string) bool {
 	for _, b := range list {

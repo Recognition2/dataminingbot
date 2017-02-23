@@ -4,7 +4,9 @@
 package main
 
 import (
+	"database/sql"
 	"github.com/BurntSushi/toml"
+	_ "github.com/go-sql-driver/mysql"
 	"github.com/go-telegram-bot-api/telegram-bot-api"
 	"io/ioutil"
 	"log"
@@ -30,6 +32,8 @@ type global struct {
 	bot      *tgbotapi.BotAPI // The actual bot
 	c        Config
 	messages chan *tgbotapi.Message
+	db       *sql.DB
+	useDB    bool
 }
 
 // Global variables
@@ -86,16 +90,22 @@ func mainExitCode() int {
 		c:        c,
 	}
 
+	// Statistics object
+	var stats = make(map[int64]*chatStats)
+
 	// Start processing messages
 	g.messages = make(chan *tgbotapi.Message, 100)
+	clearStats := make(chan bool)
 	wg.Add(1)
-	go messageProcessor(g)
+	go messageProcessor(&g, clearStats, stats)
 
 	// Start message monitor
 	wg.Add(1)
-	go messageMonitor(g) // Monitor messages
+	go messageMonitor(&g, stats) // Monitor messages
 
 	// Start the database connection
+	wg.Add(1)
+	go dbTimer(&g, clearStats, stats)
 
 	// Wait for SIGINT or SIGTERM, then quit
 	done := make(chan bool, 1)
@@ -121,7 +131,8 @@ func mainExitCode() int {
 	return 0
 }
 
-func messageMonitor(g global) {
+func messageMonitor(g *global, stats map[int64]*chatStats) {
+	logInfo.Println("Starting message monitor")
 	defer g.wg.Done()
 
 	u := tgbotapi.NewUpdate(0)
@@ -142,8 +153,7 @@ outer:
 			}
 
 			if update.Message.IsCommand() {
-				g.wg.Add(1)
-				go commandHandler(g, update.Message)
+				commandHandler(g, update.Message, stats)
 			} else {
 				// Message is no command, handle it
 				g.messages <- update.Message
@@ -154,27 +164,11 @@ outer:
 	logWarn.Println("Stopping message monitor")
 }
 
-//func dbHandler(g global) {
-//	defer g.wg.Done()
-//	user := g.c.Mysql_user
-//	passwd := g.c.Mysql_passwd
-//	dbname := g.c.Mysql_dbname
-//
-//	db, err := sql.Open("mysql", user + ":" + passwd + "@/" + dbname)	// DOES NOT open a connection
-//	if err != nil {
-//		logErr.Printf("Failed opening db connection: %v\n", err)
-//		return
-//	}
-//	defer db.Close()
-//
-//	err = db.Ping() // Validating DSN data
-//	if err != nil {
-//		logErr.Println(err)
-//	}
-//
-//
-//
-//}
+func checkErr(e error) {
+	if e != nil {
+		logErr.Println(e)
+	}
+}
 
 func contains(a string, list []string) bool {
 	for _, b := range list {

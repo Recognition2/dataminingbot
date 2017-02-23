@@ -10,23 +10,25 @@ type chatStats struct {
 	messageTotal int
 	charTotal    int64
 	Type         string
-	people       map[int]person
+	people       map[int]personStats
 }
 
-type person struct {
+type personStats struct {
 	name      string
 	msgcount  int
 	charcount int64
 }
 
-var stats = make(map[int64]chatStats) // GLOBAL, I KNOW
-
-func messageProcessor(g global) {
+func messageProcessor(g *global, clearStats <-chan bool, stats map[int64]*chatStats) {
 	defer g.wg.Done()
+	logInfo.Println("Starting message processor")
+	defer logWarn.Println("Stopping message processor")
 
 outer:
 	for {
 		select {
+		case <-clearStats:
+			stats = make(map[int64]*chatStats)
 		case <-g.shutdown:
 			break outer
 		case msg := <-g.messages:
@@ -34,15 +36,14 @@ outer:
 		}
 	}
 
-	logWarn.Println("Stopping message processor")
 }
 
-func processMessage(msg *tgbotapi.Message, stats map[int64]chatStats) {
+func processMessage(msg *tgbotapi.Message, stats map[int64]*chatStats) {
 	// Cherry pick the needed struct from the map
 	i, ok := stats[msg.Chat.ID]
-	if ok == false {
+	if ok == false || i.name != msg.Chat.Title {
 		i.name = msg.Chat.Title
-		i.people = make(map[int]person)
+		i.people = make(map[int]personStats)
 		i.Type = msg.Chat.Type
 	}
 
@@ -51,8 +52,9 @@ func processMessage(msg *tgbotapi.Message, stats map[int64]chatStats) {
 
 	// Cherry pick again
 	p, ok := i.people[msg.From.ID]
-	if ok == false {
-		p.name = fmt.Sprintf("%s %s", msg.From.FirstName, msg.From.LastName)
+	personname := fmt.Sprintf("%s %s", msg.From.FirstName, msg.From.LastName)
+	if ok == false || p.name != personname {
+		p.name = personname
 	}
 	p.msgcount++
 	p.charcount += int64(len(msg.Text))

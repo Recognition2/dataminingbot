@@ -3,14 +3,15 @@ package main
 
 import (
 	"bytes"
+	"database/sql"
 	"fmt"
+	_ "github.com/go-sql-driver/mysql"
 	"github.com/go-telegram-bot-api/telegram-bot-api"
 	"strconv"
 	"time"
 )
 
-func commandHandler(g global, cmd *tgbotapi.Message) {
-	defer g.wg.Done()
+func commandHandler(g *global, cmd *tgbotapi.Message, stats map[int64]*chatStats) {
 
 	switch cmd.Command() {
 	case "hi":
@@ -19,14 +20,13 @@ func commandHandler(g global, cmd *tgbotapi.Message) {
 		handlePing(g.bot, cmd)
 
 	case "stats":
-		handleStats(g.bot, cmd)
+		handleStats(g, cmd, stats)
 	case "time":
 		handleTime(g.bot, cmd)
 	default:
 		if contains(strconv.Itoa(cmd.From.ID), g.c.Admins) {
 			_ = adminCommandHandler(g, cmd)
 		}
-
 	}
 }
 
@@ -67,14 +67,32 @@ func handleTime(bot *tgbotapi.BotAPI, cmd *tgbotapi.Message) {
 	}
 }
 
-func handleStats(bot *tgbotapi.BotAPI, cmd *tgbotapi.Message) {
-	var b bytes.Buffer
-	chat := stats[cmd.Chat.ID]
+func handleStats(g *global, cmd *tgbotapi.Message, stats map[int64]*chatStats) {
+	memstats := stats[cmd.Chat.ID]
+	thisChat := chatStats{}
+	if g.useDB {
+		// get data from db
+		thisChat = getStatsFromDB(g.db, cmd.Chat.ID)
+	}
 
+	// Add data that is currently in memory
+	thisChat.messageTotal += memstats.messageTotal
+	thisChat.charTotal += memstats.charTotal
+
+	for i, c := range memstats.people {
+		var thisperson personStats
+		thisperson.name = c.name
+		thisperson.charcount = thisChat.people[i].charcount + c.charcount
+		thisperson.msgcount = thisChat.people[i].msgcount + c.msgcount
+		thisChat.people[i] = thisperson
+	}
+
+	// Results have been fetched, create the message
+	var b bytes.Buffer
 	b.WriteString("Message count, character count\n")
 
 	var cname string
-	switch chat.Type {
+	switch thisChat.Type {
 	case "private":
 		logInfo.Println("Private chat statistics requested")
 		cname = "Private chat"
@@ -82,24 +100,74 @@ func handleStats(bot *tgbotapi.BotAPI, cmd *tgbotapi.Message) {
 		fallthrough
 	case "supergroup":
 		logInfo.Printf("Statistics requested by %v\n", cmd.From.String())
-		cname = chat.name
+		cname = thisChat.name
 	}
 	b.WriteString(fmt.Sprintf("*%s*\n", cname))
 
-	for _, j := range chat.people {
+	for _, j := range thisChat.people {
 		b.WriteString(fmt.Sprintf("%s: *%d*; %d\n", j.name, j.msgcount, j.charcount))
 	}
 
-	b.WriteString(fmt.Sprintf("\n_Total_: *%d*; %d\n", chat.messageTotal, chat.charTotal))
+	b.WriteString(fmt.Sprintf("\n_Total_: *%d*; %d\n", thisChat.messageTotal, thisChat.charTotal))
 
 	curr := time.Now().String()[:19]
 	b.WriteString(fmt.Sprintf("%s", curr))
 
 	m := tgbotapi.NewMessage(cmd.Chat.ID, b.String())
 	m.ParseMode = tgbotapi.ModeMarkdown
-	_, err := bot.Send(m)
+	_, err := g.bot.Send(m)
 	if err != nil {
 		logErr.Println(err)
 	}
+}
 
+func getStatsFromDB(db *sql.DB, chatid int64) chatStats {
+	c := chatStats{}
+	// get thisChatinfo
+	chatfk := getChatInfo(db, &c, chatid)
+
+	// get person information
+	getPersonInfo(db, &c, chatfk)
+
+	return c
+}
+
+func getChatInfo(db *sql.DB, c *chatStats, chatid int64) (id int64) {
+	chatinfo, err := db.Query(`SELECT id, name, messageTotal, charTotal, Type FROM chats WHERE chatid=? LIMIT 1`, chatid)
+	checkErr(err)
+	defer chatinfo.Close()
+
+	var charTotal int64
+	var msgTotal int
+	var name, Type string
+
+	err = chatinfo.Scan(&id, &name, &msgTotal, &charTotal, &Type)
+	checkErr(err)
+
+	c.Type = Type
+	c.charTotal = charTotal
+	c.messageTotal = msgTotal
+	c.name = name
+	return
+}
+
+func getPersonInfo(db *sql.DB, c *chatStats, chatfk int64) {
+	rows, err := db.Query(`SELECT name, personid, msgcount, charcount FROM personstats WHERE chatfk = ?`, chatfk)
+	checkErr(err)
+	defer rows.Close()
+
+	for rows.Next() {
+		var name string
+		var charcount int64
+		var msgcount, personid int
+
+		err = rows.Scan(&name, &personid, &msgcount, &charcount)
+		checkErr(err)
+
+		c.people[personid] = personStats{
+			name:      name,
+			msgcount:  msgcount,
+			charcount: charcount,
+		}
+	}
 }

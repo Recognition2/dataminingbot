@@ -8,7 +8,7 @@ import (
 	"os/exec"
 )
 
-func adminCommandHandler(g global, cmd *tgbotapi.Message) bool {
+func adminCommandHandler(g *global, cmd *tgbotapi.Message) bool {
 	// These commands are only available if:
 	// - You're in a private chat
 	// - You're in a group chat, but you specify "override"

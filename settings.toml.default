@@ -5,3 +5,7 @@ admins = ["00000", "111111"]
 
 # Logging level should be one of "error", "warn", or "info"
 logLevel = "info"
+
+mysql_user = "dataminingbotsqlusername"
+mysql_passwd = "This is an extremely long password, for instance generated with openssl rand -base64 50"
+mysql_dbname = "dataminingbot"

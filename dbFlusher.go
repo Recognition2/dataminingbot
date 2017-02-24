@@ -13,7 +13,7 @@ func dbTimer(g *global, clearStats chan bool) {
 	passwd := g.c.Mysql_passwd
 	dbname := g.c.Mysql_dbname
 
-	db, err := sql.Open("mysql", user+":"+passwd+"/"+dbname) // DOES NOT open a connection
+	db, err := sql.Open("mysql", user+":"+passwd+"@/"+dbname) // DOES NOT open a connection
 	if err != nil {
 		logErr.Println(err)
 	}

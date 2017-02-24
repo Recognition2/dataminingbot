@@ -38,15 +38,19 @@ type global struct {
 
 // Global variables
 // Loggers:
-var logErr = log.New(os.Stderr, "[ERRO] ", log.Ldate+log.Ltime+log.Ltime)
+var logErr = log.New(os.Stderr, "[ERRO] ", log.Ldate+log.Ltime+log.Ltime+log.Lshortfile)
 var logWarn = log.New(os.Stdout, "[WARN] ", log.Ldate+log.Ltime)
 var logInfo = log.New(os.Stdout, "[INFO] ", log.Ldate+log.Ltime)
+
+// Statistics object..
+var stats = make(map[int64]chatStats)
 
 func main() {
 	os.Exit(mainExitCode())
 }
 
 func mainExitCode() int {
+
 	// Create logging objects
 
 	// Parse bot configuration
@@ -90,22 +94,19 @@ func mainExitCode() int {
 		c:        c,
 	}
 
-	// Statistics object
-	var stats = make(map[int64]*chatStats)
-
 	// Start processing messages
 	g.messages = make(chan *tgbotapi.Message, 100)
 	clearStats := make(chan bool)
 	wg.Add(1)
-	go messageProcessor(&g, clearStats, stats)
+	go messageProcessor(&g, clearStats)
 
 	// Start message monitor
 	wg.Add(1)
-	go messageMonitor(&g, stats) // Monitor messages
+	go messageMonitor(&g) // Monitor messages
 
 	// Start the database connection
 	wg.Add(1)
-	go dbTimer(&g, clearStats, stats)
+	go dbTimer(&g, clearStats)
 
 	// Wait for SIGINT or SIGTERM, then quit
 	done := make(chan bool, 1)
@@ -131,8 +132,9 @@ func mainExitCode() int {
 	return 0
 }
 
-func messageMonitor(g *global, stats map[int64]*chatStats) {
+func messageMonitor(g *global) {
 	logInfo.Println("Starting message monitor")
+	defer logWarn.Println("Stopping message monitor")
 	defer g.wg.Done()
 
 	u := tgbotapi.NewUpdate(0)
@@ -153,7 +155,7 @@ outer:
 			}
 
 			if update.Message.IsCommand() {
-				commandHandler(g, update.Message, stats)
+				commandHandler(g, update.Message)
 			} else {
 				// Message is no command, handle it
 				g.messages <- update.Message
@@ -161,13 +163,6 @@ outer:
 		}
 	}
 
-	logWarn.Println("Stopping message monitor")
-}
-
-func checkErr(e error) {
-	if e != nil {
-		logErr.Println(e)
-	}
 }
 
 func contains(a string, list []string) bool {

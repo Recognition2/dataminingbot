@@ -11,16 +11,17 @@ import (
 	"time"
 )
 
-func commandHandler(g *global, cmd *tgbotapi.Message, stats map[int64]*chatStats) {
+func commandHandler(g *global, cmd *tgbotapi.Message) {
 
 	switch cmd.Command() {
 	case "hi":
 		handleHi(g.bot, cmd)
+	case "hallodaar":
+		handleHallodaar(g.bot, cmd)
 	case "ping":
 		handlePing(g.bot, cmd)
-
 	case "stats":
-		handleStats(g, cmd, stats)
+		handleStats(g, cmd)
 	case "time":
 		handleTime(g.bot, cmd)
 	default:
@@ -32,6 +33,15 @@ func commandHandler(g *global, cmd *tgbotapi.Message, stats map[int64]*chatStats
 
 func handleHi(bot *tgbotapi.BotAPI, cmd *tgbotapi.Message) {
 	msg := tgbotapi.NewMessage(cmd.Chat.ID, "Hello to *you* too!")
+	msg.ParseMode = tgbotapi.ModeMarkdown
+	_, err := bot.Send(msg)
+	if err != nil {
+		logErr.Println(err)
+	}
+}
+
+func handleHallodaar(bot *tgbotapi.BotAPI, cmd *tgbotapi.Message) {
+	msg := tgbotapi.NewMessage(cmd.Chat.ID, "Hai _schat_")
 	msg.ParseMode = tgbotapi.ModeMarkdown
 	_, err := bot.Send(msg)
 	if err != nil {
@@ -59,7 +69,7 @@ func handleTime(bot *tgbotapi.BotAPI, cmd *tgbotapi.Message) {
 	t2 := time.Now()
 
 	timeDiff := t2.Sub(t1)
-	msg2 := tgbotapi.NewMessage(cmd.Chat.ID, fmt.Sprintf("Time difference: %f seconds", timeDiff.Seconds()))
+	msg2 := tgbotapi.NewMessage(cmd.Chat.ID, fmt.Sprintf("Time difference: %.3f seconds", timeDiff.Seconds()))
 	msg2.ReplyToMessageID = cmd.MessageID
 	_, err = bot.Send(msg2)
 	if err != nil {
@@ -67,13 +77,14 @@ func handleTime(bot *tgbotapi.BotAPI, cmd *tgbotapi.Message) {
 	}
 }
 
-func handleStats(g *global, cmd *tgbotapi.Message, stats map[int64]*chatStats) {
+func handleStats(g *global, cmd *tgbotapi.Message) {
 	memstats := stats[cmd.Chat.ID]
 	thisChat := chatStats{}
 	if g.useDB {
 		// get data from db
 		thisChat = getStatsFromDB(g.db, cmd.Chat.ID)
 	}
+	thisChat.people = make(map[int]personStats)
 
 	// Add data that is currently in memory
 	thisChat.messageTotal += memstats.messageTotal
@@ -124,36 +135,45 @@ func handleStats(g *global, cmd *tgbotapi.Message, stats map[int64]*chatStats) {
 func getStatsFromDB(db *sql.DB, chatid int64) chatStats {
 	c := chatStats{}
 	// get thisChatinfo
-	chatfk := getChatInfo(db, &c, chatid)
+	getChatInfo(db, &c, chatid)
 
 	// get person information
-	getPersonInfo(db, &c, chatfk)
+	getPersonInfo(db, &c, chatid)
 
 	return c
 }
 
-func getChatInfo(db *sql.DB, c *chatStats, chatid int64) (id int64) {
-	chatinfo, err := db.Query(`SELECT id, name, messageTotal, charTotal, Type FROM chats WHERE chatid=? LIMIT 1`, chatid)
-	checkErr(err)
+func getChatInfo(db *sql.DB, c *chatStats, chatid int64) {
+	chatinfo, err := db.Query(`SELECT name, messageTotal, charTotal, Type FROM chats WHERE chatid=? LIMIT 1`, chatid)
+	if err != nil {
+		logErr.Println(err)
+	}
 	defer chatinfo.Close()
+	defer chatinfo.Next()
 
 	var charTotal int64
 	var msgTotal int
 	var name, Type string
 
-	err = chatinfo.Scan(&id, &name, &msgTotal, &charTotal, &Type)
-	checkErr(err)
+	for chatinfo.Next() {
+		err = chatinfo.Scan(&name, &msgTotal, &charTotal, &Type)
+		if err != nil {
+			logErr.Println(err)
+		}
 
-	c.Type = Type
-	c.charTotal = charTotal
-	c.messageTotal = msgTotal
-	c.name = name
+		c.Type = Type
+		c.charTotal = charTotal
+		c.messageTotal = msgTotal
+		c.name = name
+	}
 	return
 }
 
 func getPersonInfo(db *sql.DB, c *chatStats, chatfk int64) {
 	rows, err := db.Query(`SELECT name, personid, msgcount, charcount FROM personstats WHERE chatfk = ?`, chatfk)
-	checkErr(err)
+	if err != nil {
+		logErr.Println(err)
+	}
 	defer rows.Close()
 
 	for rows.Next() {
@@ -162,7 +182,9 @@ func getPersonInfo(db *sql.DB, c *chatStats, chatfk int64) {
 		var msgcount, personid int
 
 		err = rows.Scan(&name, &personid, &msgcount, &charcount)
-		checkErr(err)
+		if err != nil {
+			logErr.Println(err)
+		}
 
 		c.people[personid] = personStats{
 			name:      name,

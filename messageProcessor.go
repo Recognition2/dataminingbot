@@ -19,7 +19,7 @@ type personStats struct {
 	charcount int64
 }
 
-func messageProcessor(g *global, clearStats <-chan bool, stats map[int64]*chatStats) {
+func messageProcessor(g *global, clearStats <-chan bool) {
 	defer g.wg.Done()
 	logInfo.Println("Starting message processor")
 	defer logWarn.Println("Stopping message processor")
@@ -28,17 +28,17 @@ outer:
 	for {
 		select {
 		case <-clearStats:
-			stats = make(map[int64]*chatStats)
+			stats = make(map[int64]chatStats)
 		case <-g.shutdown:
 			break outer
 		case msg := <-g.messages:
-			processMessage(msg, stats)
+			processMessage(msg)
 		}
 	}
 
 }
 
-func processMessage(msg *tgbotapi.Message, stats map[int64]*chatStats) {
+func processMessage(msg *tgbotapi.Message) {
 	// Cherry pick the needed struct from the map
 	i, ok := stats[msg.Chat.ID]
 	if ok == false || i.name != msg.Chat.Title {

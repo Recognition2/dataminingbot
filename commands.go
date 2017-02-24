@@ -7,6 +7,7 @@ import (
 	"fmt"
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/go-telegram-bot-api/telegram-bot-api"
+	"sort"
 	"strconv"
 	"time"
 )
@@ -24,6 +25,8 @@ func commandHandler(g *global, cmd *tgbotapi.Message) {
 		handleStats(g, cmd)
 	case "time":
 		handleTime(g.bot, cmd)
+	case "kutbot":
+		handleInsults(g.bot, cmd)
 	default:
 		if contains(strconv.Itoa(cmd.From.ID), g.c.Admins) {
 			_ = adminCommandHandler(g, cmd)
@@ -57,6 +60,18 @@ func handlePing(bot *tgbotapi.BotAPI, cmd *tgbotapi.Message) {
 	}
 }
 
+func handleInsults(bot *tgbotapi.BotAPI, cmd *tgbotapi.Message) {
+	msg := tgbotapi.NewMessage(cmd.Chat.ID, "No, you, you little *bitch* fucktard assfuck, what the fuck do you think you are doing with the fucking fuck?")
+	msg.ParseMode = tgbotapi.ModeMarkdown
+	msg.ReplyToMessageID = cmd.MessageID
+
+	_, err := bot.Send(msg)
+	if err != nil {
+		logErr.Println(err)
+	}
+
+}
+
 func handleTime(bot *tgbotapi.BotAPI, cmd *tgbotapi.Message) {
 	t1 := time.Now()
 	msg1 := tgbotapi.NewMessage(cmd.Chat.ID, "First message")
@@ -79,12 +94,13 @@ func handleTime(bot *tgbotapi.BotAPI, cmd *tgbotapi.Message) {
 
 func handleStats(g *global, cmd *tgbotapi.Message) {
 	memstats := stats[cmd.Chat.ID]
+	logInfo.Printf("%#v", stats)
 	thisChat := chatStats{}
+	thisChat.people = make(map[int]personStats)
 	if g.useDB {
 		// get data from db
 		thisChat = getStatsFromDB(g.db, cmd.Chat.ID)
 	}
-	thisChat.people = make(map[int]personStats)
 
 	// Add data that is currently in memory
 	thisChat.messageTotal += memstats.messageTotal
@@ -115,7 +131,16 @@ func handleStats(g *global, cmd *tgbotapi.Message) {
 	}
 	b.WriteString(fmt.Sprintf("*%s*\n", cname))
 
-	for _, j := range thisChat.people {
+	// Sort people by messagecount
+	var keys []int
+	for k := range thisChat.people {
+		keys = append(keys, k)
+	}
+	sort.Ints(keys)
+
+	// Iterate over the people in the chat
+	for _, l := range keys {
+		j := thisChat.people[l]
 		b.WriteString(fmt.Sprintf("%s: *%d*; %d\n", j.name, j.msgcount, j.charcount))
 	}
 
@@ -134,6 +159,7 @@ func handleStats(g *global, cmd *tgbotapi.Message) {
 
 func getStatsFromDB(db *sql.DB, chatid int64) chatStats {
 	c := chatStats{}
+	c.people = make(map[int]personStats)
 	// get thisChatinfo
 	getChatInfo(db, &c, chatid)
 
@@ -149,7 +175,6 @@ func getChatInfo(db *sql.DB, c *chatStats, chatid int64) {
 		logErr.Println(err)
 	}
 	defer chatinfo.Close()
-	defer chatinfo.Next()
 
 	var charTotal int64
 	var msgTotal int
@@ -186,10 +211,11 @@ func getPersonInfo(db *sql.DB, c *chatStats, chatfk int64) {
 			logErr.Println(err)
 		}
 
-		c.people[personid] = personStats{
+		p := personStats{
 			name:      name,
 			msgcount:  msgcount,
 			charcount: charcount,
 		}
+		c.people[personid] = p
 	}
 }

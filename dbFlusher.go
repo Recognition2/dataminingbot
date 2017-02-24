@@ -95,6 +95,7 @@ func writeToDb(db *sql.DB) {
 			}
 			delete(stats[chatID].people, personID)
 		}
+		delete(stats, chatID)
 	}
 
 	afterFlush := time.Now()

@@ -16,7 +16,7 @@ CREATE TABLE `personstats` (
   `personid` bigint NOT NULL,
   `msgcount` bigint NOT NULL,
   `charcount` int NOT NULL,
-  FOREIGN KEY (`chatfk`) REFERENCES `chats` (`id`) ON DELETE CASCADE
+  FOREIGN KEY (`chatfk`) REFERENCES `chats` (`chatid`) ON DELETE CASCADE
 ) ENGINE='InnoDB' COLLATE 'utf8mb4_bin';
 
 ALTER TABLE `personstats`

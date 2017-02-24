@@ -13,7 +13,7 @@ func dbTimer(g *global, clearStats chan bool) {
 	passwd := g.c.Mysql_passwd
 	dbname := g.c.Mysql_dbname
 
-	db, err := sql.Open("mysql", user+":"+passwd+"@/"+dbname) // DOES NOT open a connection
+	db, err := sql.Open("mysql", user+":"+passwd+"@unix(/run/mysqld/mysqld.sock)/"+dbname) // DOES NOT open a connection
 	if err != nil {
 		logErr.Println(err)
 	}
@@ -98,5 +98,5 @@ func writeToDb(db *sql.DB) {
 	}
 
 	afterFlush := time.Now()
-	logWarn.Printf("Flushing to database completed, took %f seconds\n", afterFlush.Sub(beforeFlush).Seconds())
+	logWarn.Printf("Flushing to database completed, took %.3f seconds\n", afterFlush.Sub(beforeFlush).Seconds())
 }

@@ -8,7 +8,7 @@ import (
 	"os/exec"
 )
 
-func adminCommandHandler(g *global, cmd *tgbotapi.Message) bool {
+func adminCommandHandler(cmd *tgbotapi.Message) bool {
 	// These commands are only available if:
 	// - You're in a private chat
 	// - You're in a group chat, but you specify "override"
@@ -16,16 +16,16 @@ func adminCommandHandler(g *global, cmd *tgbotapi.Message) bool {
 
 	switch cmd.Command() {
 	case "load":
-		handleLoad(g.bot, cmd)
+		handleLoad(cmd)
 	case "uptime":
-		handleUptime(g.bot, cmd)
+		handleUptime(cmd)
 	default:
 		return true // Is clearly not an admin command
 	}
 	return false
 }
 
-func handleLoad(bot *tgbotapi.BotAPI, cmd *tgbotapi.Message) {
+func handleLoad(cmd *tgbotapi.Message) {
 	w := exec.Command("uptime")
 	var out bytes.Buffer
 	w.Stdout = &out
@@ -39,10 +39,10 @@ func handleLoad(bot *tgbotapi.BotAPI, cmd *tgbotapi.Message) {
 	// Format: 19:02:27 up  4:47,  1 user,  load average: 0.21, 0.43, 0.45
 
 	msg := tgbotapi.NewMessage(cmd.Chat.ID, "L"+load)
-	bot.Send(msg)
+	Global.bot.Send(msg)
 }
 
-func handleUptime(bot *tgbotapi.BotAPI, cmd *tgbotapi.Message) {
+func handleUptime(cmd *tgbotapi.Message) {
 	uptime := exec.Command("uptime", "-p")
 	var out bytes.Buffer
 	uptime.Stdout = &out
@@ -53,5 +53,5 @@ func handleUptime(bot *tgbotapi.BotAPI, cmd *tgbotapi.Message) {
 	}
 
 	msg := tgbotapi.NewMessage(cmd.Chat.ID, out.String())
-	bot.Send(msg)
+	Global.bot.Send(msg)
 }

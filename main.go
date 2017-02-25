@@ -30,10 +30,12 @@ type global struct {
 	wg       *sync.WaitGroup  // For checking that everything has indeed shut down
 	shutdown chan bool        // To make sure everything can shut down
 	bot      *tgbotapi.BotAPI // The actual bot
-	c        Config
-	messages chan *tgbotapi.Message
-	db       *sql.DB
-	useDB    bool
+	config   Config           // Configuration file
+	db       *sql.DB          // Database connection
+	useDB    bool             // Use a database connection, or just run in memory
+
+	stats     map[int64]chatStats // statistics global object
+	statsLock chan (bool)         // Lock for stats object
 }
 
 // Global variables
@@ -42,8 +44,11 @@ var logErr = log.New(os.Stderr, "[ERRO] ", log.Ldate+log.Ltime+log.Ltime+log.Lsh
 var logWarn = log.New(os.Stdout, "[WARN] ", log.Ldate+log.Ltime)
 var logInfo = log.New(os.Stdout, "[INFO] ", log.Ldate+log.Ltime)
 
-// Statistics object..
-var stats = make(map[int64]chatStats)
+var Global = global{
+	shutdown:  make(chan bool),
+	stats:     make(map[int64]chatStats),
+	statsLock: make(chan bool),
+}
 
 func main() {
 	os.Exit(mainExitCode())
@@ -75,94 +80,51 @@ func mainExitCode() int {
 		return 1
 	}
 	logInfo.Println("Config file parsed")
-	logWarn.Println("This is an example of a warning")
-	logErr.Println("This is an example of an error")
+	Global.config = c
 
-	bot, err := tgbotapi.NewBotAPI(c.Apikey)
+	Global.bot, err = tgbotapi.NewBotAPI(c.Apikey)
 	if err != nil {
 		logErr.Println(err)
 	}
 
-	shouldShutdown := make(chan bool)
-
 	// Create the waitgroup
 	var wg sync.WaitGroup
-	g := global{
-		wg:       &wg,
-		shutdown: shouldShutdown,
-		bot:      bot,
-		c:        c,
-	}
+	Global.wg = &wg
 
 	// Start processing messages
-	g.messages = make(chan *tgbotapi.Message, 100)
-	clearStats := make(chan bool)
-	wg.Add(1)
-	go messageProcessor(&g, clearStats)
+	messages := make(chan *tgbotapi.Message, 100)
+	var n int = 4
+	Global.wg.Add(n)
+	for i := 0; i < n; i++ {
+		go messageProcessor(i, messages) // Start multiple message processors
+	}
 
 	// Start message monitor
-	wg.Add(1)
-	go messageMonitor(&g) // Monitor messages
+	Global.wg.Add(1)
+	go messageMonitor(messages) // Monitor messages
 
 	// Start the database connection
-	wg.Add(1)
-	go dbTimer(&g, clearStats)
+	Global.wg.Add(1)
+	go dbTimer()
 
 	// Wait for SIGINT or SIGTERM, then quit
-	done := make(chan bool, 1)
 	sigs := make(chan os.Signal, 2)
 	signal.Notify(sigs, os.Interrupt, syscall.SIGINT)
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		<-sigs // This goroutine will hang here until interrupt is sent
-		println()
-		logInfo.Println("Shutdown signal received, waiting for goroutines")
-		close(shouldShutdown)
-		done <- true
-	}()
+
+	Global.statsLock <- true // Pass token into channel
 
 	logInfo.Println("All routines have been started, awaiting kill signal")
 
 	// Program will hang here, probably forever
-	<-done
+	<-sigs
+	println()
+	logInfo.Println("Shutdown signal received, waiting for goroutines")
+	close(Global.shutdown)
+
 	// Shutdown initiated, waiting for all goroutines to shut down
-	wg.Wait()
-	logInfo.Println("Shutting down")
+	Global.wg.Wait()
+	logWarn.Println("Shutting down")
 	return 0
-}
-
-func messageMonitor(g *global) {
-	logInfo.Println("Starting message monitor")
-	defer logWarn.Println("Stopping message monitor")
-	defer g.wg.Done()
-
-	u := tgbotapi.NewUpdate(0)
-	u.Timeout = 15
-	updates, err := g.bot.GetUpdatesChan(u)
-	if err != nil {
-		logErr.Printf("Update failed: %v\n", err)
-	}
-
-outer:
-	for {
-		select {
-		case <-g.shutdown:
-			break outer
-		case update := <-updates:
-			if update.Message == nil {
-				continue
-			}
-
-			if update.Message.IsCommand() {
-				commandHandler(g, update.Message)
-			} else {
-				// Message is no command, handle it
-				g.messages <- update.Message
-			}
-		}
-	}
-
 }
 
 func contains(a string, list []string) bool {

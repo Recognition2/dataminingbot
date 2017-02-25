@@ -19,19 +19,17 @@ type personStats struct {
 	charcount int64
 }
 
-func messageProcessor(g *global, clearStats <-chan bool) {
-	defer g.wg.Done()
-	logInfo.Println("Starting message processor")
-	defer logWarn.Println("Stopping message processor")
+func messageProcessor(id int, messages chan *tgbotapi.Message) {
+	defer Global.wg.Done()
+	logInfo.Printf("Starting message processor %d\n", id)
+	defer logWarn.Printf("Stopping message processor %d\n", id)
 
 outer:
 	for {
 		select {
-		case <-clearStats:
-			stats = make(map[int64]chatStats)
-		case <-g.shutdown:
+		case <-Global.shutdown:
 			break outer
-		case msg := <-g.messages:
+		case msg := <-messages:
 			processMessage(msg)
 		}
 	}
@@ -40,7 +38,7 @@ outer:
 
 func processMessage(msg *tgbotapi.Message) {
 	// Cherry pick the needed struct from the map
-	i, ok := stats[msg.Chat.ID]
+	i, ok := Global.stats[msg.Chat.ID]
 	if ok == false || i.name != msg.Chat.Title {
 		i.name = msg.Chat.Title
 		i.people = make(map[int]personStats)
@@ -61,5 +59,9 @@ func processMessage(msg *tgbotapi.Message) {
 
 	// Send the structs back to the maps
 	i.people[msg.From.ID] = p
-	stats[msg.Chat.ID] = i
+
+	// Lock stats object before writing
+	<-Global.statsLock // Get token from channel, acquire lock
+	Global.stats[msg.Chat.ID] = i
+	Global.statsLock <- true // Release lock, pass token back
 }

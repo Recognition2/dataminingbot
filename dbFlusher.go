@@ -5,13 +5,12 @@ import (
 	"time"
 )
 
-func dbTimer(g *global, clearStats chan bool) {
-	defer g.wg.Done()
-	defer logWarn.Println("Database connection closed")
+func dbTimer() {
+	defer Global.wg.Done()
 
-	user := g.c.Mysql_user
-	passwd := g.c.Mysql_passwd
-	dbname := g.c.Mysql_dbname
+	user := Global.config.Mysql_user
+	passwd := Global.config.Mysql_passwd
+	dbname := Global.config.Mysql_dbname
 
 	db, err := sql.Open("mysql", user+":"+passwd+"@/"+dbname) // DOES NOT open a connection
 	if err != nil {
@@ -22,42 +21,48 @@ func dbTimer(g *global, clearStats chan bool) {
 	if err != nil {
 		logErr.Printf("Failed opening db connection: %v\n", err)
 		logWarn.Println("Running in memory")
-		g.useDB = false
+		Global.useDB = false
 		return
 	}
 	defer db.Close()
 
-	g.useDB = true
-	g.db = db
+	Global.useDB = true
+	Global.db = db
+	logInfo.Println("Database connection opened!")
+	defer logWarn.Println("Database connection closed")
 
-	shouldShutDown := false
-	for !shouldShutDown {
+outer:
+	for {
 		// Get time channel
 		timeToSync := time.After(time.Minute * 2)
 
 		select {
-		case <-g.shutdown:
-			shouldShutDown = true
+		case <-Global.shutdown:
 			// If shutdown, sync stats then quit
-			writeToDb(db)
+			writeToDb()
+			break outer
 
 		case <-timeToSync:
-			writeToDb(db)
-			clearStats <- true
+			writeToDb()
 		}
 	}
 }
 
-func writeToDb(db *sql.DB) {
+func writeToDb() {
+	// Lock the stats object
+	<-Global.statsLock
+	defer func() { Global.statsLock <- true }()
+
 	// First, add the chat
 	// Secondly, add all people (and their statistics) and link it to that chat
 
 	beforeFlush := time.Now()
+	defer logWarn.Printf("Flushing to database completed, took %.3f seconds\n", time.Now().Sub(beforeFlush).Seconds())
 
 	// Iterate over all chats
 	// ci = chatinfo, has to be used 8 times...
-	for chatID, ci := range stats {
-		stmt, err := db.Prepare(`
+	for chatID, ci := range Global.stats {
+		stmt, err := Global.db.Prepare(`
 			INSERT INTO
 				chats (chatid, name, messageTotal, charTotal, Type)
 				VALUES (?, ?, ?, ?, ?)
@@ -76,7 +81,7 @@ func writeToDb(db *sql.DB) {
 		}
 
 		for personID, pi := range ci.people {
-			stmt, err := db.Prepare(`
+			stmt, err := Global.db.Prepare(`
 			INSERT INTO
 				personstats (chatfk, personid, msgcount, charcount, name)
 				VALUES (?, ?, ?, ?, ?)
@@ -93,11 +98,8 @@ func writeToDb(db *sql.DB) {
 			if err != nil {
 				logErr.Println(err)
 			}
-			delete(stats[chatID].people, personID)
 		}
-		delete(stats, chatID)
 	}
-
-	afterFlush := time.Now()
-	logWarn.Printf("Flushing to database completed, took %.3f seconds\n", afterFlush.Sub(beforeFlush).Seconds())
+	// Clear stats object
+	Global.stats = make(map[int64]chatStats)
 }

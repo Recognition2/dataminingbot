@@ -34,7 +34,7 @@ func dbTimer() {
 outer:
 	for {
 		// Get time channel
-		timeToSync := time.After(time.Minute * 2)
+		timeToSync := time.After(time.Second * 100)
 
 		select {
 		case <-Global.shutdown:
@@ -49,15 +49,10 @@ outer:
 }
 
 func writeToDb() {
-	// Lock the stats object
-	<-Global.statsLock
-	defer func() { Global.statsLock <- true }()
+	beforeFlush := time.Now()
 
 	// First, add the chat
 	// Secondly, add all people (and their statistics) and link it to that chat
-
-	beforeFlush := time.Now()
-	defer logWarn.Printf("Flushing to database completed, took %.3f seconds\n", time.Now().Sub(beforeFlush).Seconds())
 
 	// Iterate over all chats
 	// ci = chatinfo, has to be used 8 times...
@@ -101,5 +96,10 @@ func writeToDb() {
 		}
 	}
 	// Clear stats object
-	Global.stats = make(map[int64]chatStats)
+	Global.statsLock.Lock()
+	Global.stats = make(map[int64]chatStats) // LOCK
+	Global.statsLock.Unlock()
+
+	timeAfter := time.Now()
+	logWarn.Printf("Flushing to database completed, took %.5f seconds\n", timeAfter.Sub(beforeFlush).Seconds())
 }

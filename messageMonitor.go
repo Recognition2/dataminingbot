@@ -27,6 +27,8 @@ outer:
 
 			if update.Message.IsCommand() {
 				commandHandler(update.Message)
+			} else if update.Message.Text == "hi" {
+				handleHi(update.Message)
 			} else {
 				// Message is no command, handle it
 				messages <- update.Message

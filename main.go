@@ -27,15 +27,14 @@ type Config struct {
 }
 
 type global struct {
-	wg       *sync.WaitGroup  // For checking that everything has indeed shut down
-	shutdown chan bool        // To make sure everything can shut down
-	bot      *tgbotapi.BotAPI // The actual bot
-	config   Config           // Configuration file
-	db       *sql.DB          // Database connection
-	useDB    bool             // Use a database connection, or just run in memory
-
+	wg        *sync.WaitGroup     // For checking that everything has indeed shut down
+	shutdown  chan bool           // To make sure everything can shut down
+	bot       *tgbotapi.BotAPI    // The actual bot
+	config    Config              // Configuration file
+	db        *sql.DB             // Database connection
+	useDB     bool                // Use a database connection, or just run in memory
 	stats     map[int64]chatStats // statistics global object
-	statsLock chan (bool)         // Lock for stats object
+	statsLock *sync.RWMutex       // Lock for stats object
 }
 
 // Global variables
@@ -45,9 +44,8 @@ var logWarn = log.New(os.Stdout, "[WARN] ", log.Ldate+log.Ltime)
 var logInfo = log.New(os.Stdout, "[INFO] ", log.Ldate+log.Ltime)
 
 var Global = global{
-	shutdown:  make(chan bool),
-	stats:     make(map[int64]chatStats),
-	statsLock: make(chan bool),
+	shutdown: make(chan bool),
+	stats:    make(map[int64]chatStats),
 }
 
 func main() {
@@ -91,10 +89,14 @@ func mainExitCode() int {
 	var wg sync.WaitGroup
 	Global.wg = &wg
 
+	// Create the stats lock
+	var statsLock sync.RWMutex
+	Global.statsLock = &statsLock
+
 	// Start processing messages
 	messages := make(chan *tgbotapi.Message, 100)
 	var n int = 4
-	Global.wg.Add(n)
+	Global.wg.Add(n - 1)
 	for i := 0; i < n; i++ {
 		go messageProcessor(i, messages) // Start multiple message processors
 	}
@@ -111,8 +113,6 @@ func mainExitCode() int {
 	sigs := make(chan os.Signal, 2)
 	signal.Notify(sigs, os.Interrupt, syscall.SIGINT)
 
-	Global.statsLock <- true // Pass token into channel
-
 	logInfo.Println("All routines have been started, awaiting kill signal")
 
 	// Program will hang here, probably forever
@@ -120,7 +120,6 @@ func mainExitCode() int {
 	println()
 	logInfo.Println("Shutdown signal received, waiting for goroutines")
 	close(Global.shutdown)
-
 	// Shutdown initiated, waiting for all goroutines to shut down
 	Global.wg.Wait()
 	logWarn.Println("Shutting down")

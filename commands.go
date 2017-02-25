@@ -83,7 +83,7 @@ func handleTime(cmd *tgbotapi.Message) {
 	t2 := time.Now()
 
 	timeDiff := t2.Sub(t1)
-	msg2 := tgbotapi.NewMessage(cmd.Chat.ID, fmt.Sprintf("Time difference: %.3f seconds", timeDiff.Seconds()))
+	msg2 := tgbotapi.NewMessage(cmd.Chat.ID, fmt.Sprintf("Time difference: %.1f ms", timeDiff.Seconds()*1000))
 	msg2.ReplyToMessageID = cmd.MessageID
 	_, err = Global.bot.Send(msg2)
 	if err != nil {
@@ -92,8 +92,11 @@ func handleTime(cmd *tgbotapi.Message) {
 }
 
 func handleStats(cmd *tgbotapi.Message) {
+	Global.statsLock.RLock()
 	memstats := Global.stats[cmd.Chat.ID]
 	logInfo.Printf("%#v", Global.stats)
+	Global.statsLock.RUnlock()
+
 	thisChat := chatStats{}
 	thisChat.people = make(map[int]personStats)
 	if Global.useDB {

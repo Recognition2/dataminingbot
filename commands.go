@@ -26,10 +26,20 @@ func commandHandler(cmd *tgbotapi.Message) {
 		handleTime(cmd)
 	case "kutbot":
 		handleInsults(cmd)
+	case "getid":
+		handleGetID(cmd)
 	default:
 		if contains(strconv.Itoa(cmd.From.ID), Global.config.Admins) {
 			_ = adminCommandHandler(cmd)
 		}
+	}
+}
+
+func handleGetID(cmd *tgbotapi.Message) {
+	msg := tgbotapi.NewMessage(cmd.Chat.ID, fmt.Sprintf("Hi, %s, your Telegram user ID is given by %d", cmd.From.FirstName+cmd.From.LastName, cmd.From.ID))
+	_, err := Global.bot.Send(msg)
+	if err != nil {
+		logErr.Println(err)
 	}
 }
 

@@ -12,7 +12,6 @@ func adminCommandHandler(cmd *tgbotapi.Message) bool {
 	// These commands are only available if:
 	// - You're in a private chat
 	// - You're in a group chat, but you specify "override"
-	logInfo.Printf("Admin command '%s' requested\n", cmd.Command())
 
 	switch cmd.Command() {
 	case "load":

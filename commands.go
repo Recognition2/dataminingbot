@@ -94,7 +94,6 @@ func handleTime(cmd *tgbotapi.Message) {
 func handleStats(cmd *tgbotapi.Message) {
 	Global.statsLock.RLock()
 	memstats := Global.stats[cmd.Chat.ID]
-	logInfo.Printf("%#v", Global.stats)
 	Global.statsLock.RUnlock()
 
 	thisChat := chatStats{}

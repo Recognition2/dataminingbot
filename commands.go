@@ -6,7 +6,6 @@ import (
 	"fmt"
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/go-telegram-bot-api/telegram-bot-api"
-	"sort"
 	"strconv"
 	"time"
 )
@@ -102,32 +101,10 @@ func handleTime(cmd *tgbotapi.Message) {
 }
 
 func handleStats(cmd *tgbotapi.Message) {
-	Global.statsLock.RLock()
-	memstats := Global.stats[cmd.Chat.ID]
-	Global.statsLock.RUnlock()
-
-	thisChat := chatStats{}
-	thisChat.people = make(map[int]personStats)
-	if Global.useDB {
-		// get data from db
-		thisChat = getStatsFromDB(cmd.Chat.ID)
-	}
-
-	// Add data that is currently in memory
-	thisChat.messageTotal += memstats.messageTotal
-	thisChat.charTotal += memstats.charTotal
-
-	for i, c := range memstats.people {
-		var thisperson personStats
-		thisperson.name = c.name
-		thisperson.charcount = thisChat.people[i].charcount + c.charcount
-		thisperson.msgcount = thisChat.people[i].msgcount + c.msgcount
-		thisChat.people[i] = thisperson
-	}
+	var thisChat chatStats = getAllStats(cmd)
 
 	// Results have been fetched, create the message
 	var b bytes.Buffer
-	b.WriteString("Message count, character count\n")
 
 	var cname string
 	switch thisChat.Type {
@@ -140,14 +117,18 @@ func handleStats(cmd *tgbotapi.Message) {
 		logInfo.Printf("Statistics requested by %v\n", cmd.From.String())
 		cname = thisChat.name
 	}
-	b.WriteString(fmt.Sprintf("*%s*\n", cname))
+	b.WriteString(fmt.Sprintf("Groups: *%s*\n", cname))
+	b.WriteString("Message count, character count\n")
 
 	// Sort people by messagecount
-	var keys []int
+	i := 0
+	var keys = make([]int, len(thisChat.people))
 	for k := range thisChat.people {
-		keys = append(keys, k)
+		keys[i] = k
+		i++
 	}
-	sort.Ints(keys)
+
+	keys = bubbleSort(keys, thisChat.people)
 
 	// Iterate over the people in the chat
 	for _, l := range keys {
@@ -166,6 +147,42 @@ func handleStats(cmd *tgbotapi.Message) {
 	if err != nil {
 		logErr.Println(err)
 	}
+}
+
+func bubbleSort(keys []int, p map[int]personStats) []int {
+	for i := 1; i < len(p); i++ {
+		for j := 0; j < len(p); j++ {
+			if p[i].msgcount > p[j].msgcount {
+				keys[i], keys[j] = keys[j], keys[i]
+			}
+		}
+	}
+	return keys
+}
+
+func getAllStats(cmd *tgbotapi.Message) (thisChat chatStats) {
+	Global.statsLock.RLock()
+	memstats := Global.stats[cmd.Chat.ID]
+	Global.statsLock.RUnlock()
+
+	thisChat.people = make(map[int]personStats)
+	if Global.useDB {
+		// get data from db
+		thisChat = getStatsFromDB(cmd.Chat.ID)
+	}
+
+	// Add data that is currently in memory
+	thisChat.messageTotal += memstats.messageTotal
+	thisChat.charTotal += memstats.charTotal
+
+	for i, c := range memstats.people {
+		var thisperson personStats
+		thisperson.name = c.name
+		thisperson.charcount = thisChat.people[i].charcount + c.charcount
+		thisperson.msgcount = thisChat.people[i].msgcount + c.msgcount
+		thisChat.people[i] = thisperson
+	}
+	return
 }
 
 func getStatsFromDB(chatid int64) chatStats {

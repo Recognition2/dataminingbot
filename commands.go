@@ -7,12 +7,16 @@ import (
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/go-telegram-bot-api/telegram-bot-api"
 	"strconv"
+	"strings"
 	"time"
 )
 
 func commandHandler(cmd *tgbotapi.Message) {
+	if strings.Contains("@", cmd.Command()) && strings.HasSuffix(cmd.Command(), Global.bot.Self.UserName) {
+		return
+	}
 
-	switch cmd.Command() {
+	switch strings.ToLower(cmd.Command()) {
 	case "hi":
 		handleHi(cmd)
 	case "hallodaar":
@@ -20,7 +24,9 @@ func commandHandler(cmd *tgbotapi.Message) {
 	case "ping":
 		handlePing(cmd)
 	case "stats":
-		handleStats(cmd)
+		handleStats(cmd, "messages")
+	case "messages", "characters":
+		handleStats(cmd, cmd.Command())
 	case "time":
 		handleTime(cmd)
 	case "kutbot":
@@ -35,7 +41,7 @@ func commandHandler(cmd *tgbotapi.Message) {
 }
 
 func handleGetID(cmd *tgbotapi.Message) {
-	msg := tgbotapi.NewMessage(cmd.Chat.ID, fmt.Sprintf("Hi, %s, your Telegram user ID is given by %d", cmd.From.FirstName+cmd.From.LastName, cmd.From.ID))
+	msg := tgbotapi.NewMessage(cmd.Chat.ID, fmt.Sprintf("Hi, %s %s, your Telegram user ID is given by %d", cmd.From.FirstName, cmd.From.LastName, cmd.From.ID))
 	_, err := Global.bot.Send(msg)
 	if err != nil {
 		logErr.Println(err)
@@ -100,7 +106,7 @@ func handleTime(cmd *tgbotapi.Message) {
 	}
 }
 
-func handleStats(cmd *tgbotapi.Message) {
+func handleStats(cmd *tgbotapi.Message, sortBy string) {
 	var thisChat chatStats = getAllStats(cmd)
 
 	// Results have been fetched, create the message
@@ -117,8 +123,8 @@ func handleStats(cmd *tgbotapi.Message) {
 		logInfo.Printf("Statistics requested by %v\n", cmd.From.String())
 		cname = thisChat.name
 	}
-	b.WriteString(fmt.Sprintf("Groups: *%s*\n", cname))
-	b.WriteString("Message count, character count\n")
+	b.WriteString(fmt.Sprintf("Group: *%s*\n", cname))
+	b.WriteString("Message count, character count\n\n")
 
 	// Sort people by messagecount
 	i := 0
@@ -127,8 +133,7 @@ func handleStats(cmd *tgbotapi.Message) {
 		keys[i] = k
 		i++
 	}
-
-	keys = bubbleSort(keys, thisChat.people)
+	keys = bubbleSort(keys, thisChat.people, sortBy)
 
 	// Iterate over the people in the chat
 	for _, l := range keys {
@@ -138,7 +143,7 @@ func handleStats(cmd *tgbotapi.Message) {
 
 	b.WriteString(fmt.Sprintf("\n_Total_: *%d*; %d\n", thisChat.messageTotal, thisChat.charTotal))
 
-	curr := time.Now().String()[:19]
+	curr := time.Now().String()[:16]
 	b.WriteString(fmt.Sprintf("%s", curr))
 
 	m := tgbotapi.NewMessage(cmd.Chat.ID, b.String())
@@ -149,10 +154,22 @@ func handleStats(cmd *tgbotapi.Message) {
 	}
 }
 
-func bubbleSort(keys []int, p map[int]personStats) []int {
-	for i := 1; i < len(p); i++ {
+func bubbleSort(keys []int, p map[int]personStats, sortBy string) []int {
+	for i := 0; i < len(p); i++ {
 		for j := 0; j < len(p); j++ {
-			if p[i].msgcount > p[j].msgcount {
+			var a, b int64
+			switch sortBy {
+			default:
+				fallthrough
+			case "messages":
+				a = int64(p[keys[i]].msgcount)
+				b = int64(p[keys[j]].msgcount)
+			case "characters":
+				a = p[keys[i]].charcount
+				b = p[keys[j]].charcount
+			}
+
+			if a > b {
 				keys[i], keys[j] = keys[j], keys[i]
 			}
 		}
@@ -219,7 +236,6 @@ func getChatInfo(c *chatStats, chatid int64) {
 		c.messageTotal = msgTotal
 		c.name = name
 	}
-	return
 }
 
 func getPersonInfo(c *chatStats, chatfk int64) {

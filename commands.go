@@ -11,8 +11,19 @@ import (
 	"time"
 )
 
+func commandIsForMe(t string) bool {
+	command := strings.SplitN(t, " ", 2)[0] // Return first substring before space, this is entire command
+
+	i := strings.Index(command, "@") // Position of @ in command
+	if i == -1 {                     // Not in command
+		return true // Assume command is for everybody, including this bot
+	}
+
+	return strings.ToLower(command[i+1:]) == strings.ToLower(Global.bot.Self.UserName)
+}
+
 func commandHandler(cmd *tgbotapi.Message) {
-	if strings.Contains("@", cmd.Command()) && strings.HasSuffix(cmd.Command(), Global.bot.Self.UserName) {
+	if !commandIsForMe(cmd.Text) {
 		return
 	}
 

@@ -78,6 +78,9 @@ func handleHallodaar(cmd *tgbotapi.Message) {
 }
 
 func handlePing(cmd *tgbotapi.Message) {
+	if cmd.From.ID == 7077672 {
+		return
+	}
 	msg := tgbotapi.NewMessage(cmd.Chat.ID, "Pong")
 	_, err := Global.bot.Send(msg)
 	if err != nil {
@@ -118,7 +121,7 @@ func handleTime(cmd *tgbotapi.Message) {
 }
 
 func handleStats(cmd *tgbotapi.Message, sortBy string) {
-	var thisChat chatStats = getAllStats(cmd)
+	thisChat := getAllStats(cmd)
 
 	// Results have been fetched, create the message
 	var b bytes.Buffer
@@ -149,10 +152,26 @@ func handleStats(cmd *tgbotapi.Message, sortBy string) {
 	// Iterate over the people in the chat
 	for _, l := range keys {
 		j := thisChat.people[l]
-		b.WriteString(fmt.Sprintf("%s: *%d*; %d\n", j.name, j.msgcount, j.charcount))
+		switch sortBy {
+		case "messages":
+			b.WriteString(fmt.Sprintf("%s: *%d*\n", j.name, j.msgcount))
+		case "characters":
+			b.WriteString(fmt.Sprintf("%s: *%d*\n", j.name, j.charcount))
+		default:
+			b.WriteString(fmt.Sprintf("%s: *%d*, %d\n", j.name, j.msgcount, j.charcount))
+		}
 	}
 
-	b.WriteString(fmt.Sprintf("\n_Total_: *%d*; %d\n", thisChat.messageTotal, thisChat.charTotal))
+	b.WriteString("\n")
+
+	switch sortBy {
+	case "messages":
+		b.WriteString(fmt.Sprintf("\n_Total_: *%d*\n", thisChat.messageTotal))
+	case "characters":
+		b.WriteString(fmt.Sprintf("\n_Total_: *%d*\n", thisChat.charTotal))
+	default:
+		b.WriteString(fmt.Sprintf("\n_Total_: *%d*; %d\n", thisChat.messageTotal, thisChat.charTotal))
+	}
 
 	curr := time.Now().String()[:16]
 	b.WriteString(fmt.Sprintf("%s", curr))
@@ -193,11 +212,8 @@ func getAllStats(cmd *tgbotapi.Message) (thisChat chatStats) {
 	memstats := Global.stats[cmd.Chat.ID]
 	Global.statsLock.RUnlock()
 
-	thisChat.people = make(map[int]personStats)
-	if Global.useDB {
-		// get data from db
-		thisChat = getStatsFromDB(cmd.Chat.ID)
-	}
+	// get data from db
+	thisChat = getStatsFromDB(cmd.Chat.ID)
 
 	// Add data that is currently in memory
 	thisChat.messageTotal += memstats.messageTotal
@@ -214,7 +230,7 @@ func getAllStats(cmd *tgbotapi.Message) (thisChat chatStats) {
 }
 
 func getStatsFromDB(chatid int64) chatStats {
-	c := chatStats{}
+	var c chatStats
 	c.people = make(map[int]personStats)
 	// get thisChatinfo
 	getChatInfo(&c, chatid)

@@ -20,21 +20,18 @@ func dbTimer() {
 	err = db.Ping() // Validating DSN data
 	if err != nil {
 		logErr.Printf("Failed opening db connection: %v\n", err)
-		logWarn.Println("Running in memory")
-		Global.useDB = false
+		close(Global.shutdown)
 		return
 	}
 	defer db.Close()
 
-	Global.useDB = true
 	Global.db = db
 	logInfo.Println("Database connection opened!")
-	defer logWarn.Println("Database connection closed")
 
 outer:
 	for {
 		// Get time channel
-		timeToSync := time.After(time.Second * 100)
+		timeToSync := time.After(time.Second * 300)
 
 		select {
 		case <-Global.shutdown:
@@ -46,6 +43,7 @@ outer:
 			writeToDb()
 		}
 	}
+	logWarn.Println("Database connection closed")
 }
 
 func writeToDb() {

@@ -32,7 +32,6 @@ type global struct {
 	bot       *tgbotapi.BotAPI    // The actual bot
 	config    Config              // Configuration file
 	db        *sql.DB             // Database connection
-	useDB     bool                // Use a database connection, or just run in memory
 	stats     map[int64]chatStats // statistics global object
 	statsLock *sync.RWMutex       // Lock for stats object
 }
@@ -40,8 +39,8 @@ type global struct {
 // Global variables
 // Loggers:
 var logErr = log.New(os.Stderr, "[ERRO] ", log.Ldate+log.Ltime+log.Ltime+log.Lshortfile)
-var logWarn = log.New(os.Stdout, "[WARN] ", log.Ldate+log.Ltime)
-var logInfo = log.New(os.Stdout, "[INFO] ", log.Ldate+log.Ltime)
+var logWarn = log.New(os.Stdout, "[WARN] ", log.Ldate+log.Ltime+log.Lmicroseconds)
+var logInfo = log.New(os.Stdout, "[INFO] ", log.Ldate+log.Ltime+log.Lmicroseconds)
 
 var Global = global{
 	shutdown: make(chan bool),
@@ -80,6 +79,7 @@ func mainExitCode() int {
 	logInfo.Println("Config file parsed")
 	Global.config = c
 
+	// Create new bot
 	Global.bot, err = tgbotapi.NewBotAPI(c.Apikey)
 	if err != nil {
 		logErr.Println(err)
@@ -96,7 +96,7 @@ func mainExitCode() int {
 	// Start processing messages
 	messages := make(chan *tgbotapi.Message, 100)
 	var n int = 4
-	Global.wg.Add(n - 1)
+	Global.wg.Add(4)
 	for i := 0; i < n; i++ {
 		go messageProcessor(i, messages) // Start multiple message processors
 	}

@@ -38,8 +38,9 @@ outer:
 
 func processMessage(msg *tgbotapi.Message) {
 	// Cherry pick the needed struct from the map
-	Global.statsLock.Lock()
+	Global.statsLock.RLock()
 	i, ok := Global.stats[msg.Chat.ID] // USE LOCKS
+	Global.statsLock.RUnlock()
 
 	if ok == false || i.name != msg.Chat.Title {
 		i.name = msg.Chat.Title
@@ -62,6 +63,8 @@ func processMessage(msg *tgbotapi.Message) {
 	// Send the structs back to the maps
 
 	i.people[msg.From.ID] = p
+
+	Global.statsLock.Lock()
 	Global.stats[msg.Chat.ID] = i // USE LOCKS
 	Global.statsLock.Unlock()
 }

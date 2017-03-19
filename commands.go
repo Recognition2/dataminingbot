@@ -6,7 +6,6 @@ import (
 	"fmt"
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/go-telegram-bot-api/telegram-bot-api"
-	"strconv"
 	"strings"
 	"time"
 )
@@ -20,6 +19,15 @@ func commandIsForMe(t string) bool {
 	}
 
 	return strings.ToLower(command[i+1:]) == strings.ToLower(Global.bot.Self.UserName)
+}
+
+func userIsAdmin(u int) bool {
+	for _, admin := range Global.config.Admins {
+		if admin == u {
+			return true
+		}
+	}
+	return false
 }
 
 func commandHandler(cmd *tgbotapi.Message) {
@@ -45,7 +53,7 @@ func commandHandler(cmd *tgbotapi.Message) {
 	case "getid":
 		handleGetID(cmd)
 	default:
-		if contains(strconv.Itoa(cmd.From.ID), Global.config.Admins) {
+		if userIsAdmin(cmd.From.ID) {
 			_ = adminCommandHandler(cmd)
 		}
 	}

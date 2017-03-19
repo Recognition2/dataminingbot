@@ -18,7 +18,7 @@ import (
 
 type Config struct {
 	Apikey       string // Telegram API key
-	Admins       []string
+	Admins       []int
 	UsePolling   bool
 	LogLevel     string // how much to log
 	Mysql_user   string `json:"mysql_user"`
@@ -52,7 +52,6 @@ func main() {
 }
 
 func mainExitCode() int {
-
 	// Create logging objects
 
 	// Parse bot configuration
@@ -116,21 +115,16 @@ func mainExitCode() int {
 	logInfo.Println("All routines have been started, awaiting kill signal")
 
 	// Program will hang here, probably forever
-	<-sigs
+	select {
+	case <-sigs:
+		close(Global.shutdown)
+	case <-Global.shutdown:
+	}
 	println()
 	logInfo.Println("Shutdown signal received, waiting for goroutines")
-	close(Global.shutdown)
+
 	// Shutdown initiated, waiting for all goroutines to shut down
 	Global.wg.Wait()
 	logWarn.Println("Shutting down")
 	return 0
-}
-
-func contains(a string, list []string) bool {
-	for _, b := range list {
-		if b == a {
-			return true
-		}
-	}
-	return false
 }
